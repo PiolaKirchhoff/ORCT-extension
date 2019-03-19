@@ -13,5 +13,12 @@ Code repository for the Thesis work on Randomized Decision Trees and their exten
 
 ## Tutorial:
   * some tutorials are available in the 'notebook' folder
+
 ## Class definition:
   * definitions are available in the 'source' folder
+
+## References:
+* _"Optimal Randomized Classification Trees"_ R. Blanquero ; E. Carrizosa; C. Molero-Rio; D. R. Morales
+* _"Sparsity in Optimal Randomized Classification Trees"_ R. Blanquero ; E. Carrizosa; C. Molero-Rio; D. R. Morales
+* _"Feature selection combining linear support vector machines and concave
+optimization"_ F. Rinaldi ; M. Sciandrone
