@@ -154,6 +154,12 @@ class SORCT:
         self.model.L0_ma = Constraint(self.model.f_s, self.model.N_B, rule=L0_par_ma)
         return True
     
+    def vincolo_classi(self,rho):
+        
+        def acc_k(model,k):
+            return sum(sum(model.P[i,t]*model.C[k,t] for t in model.N_L) for i in model.I_k[k]) >= len(model.I_k[k])*rho
+        
+        self.model.acc = Constraint(self.model.K, rule=acc_k)
     # This method is an old version of methods to charge an objective function. Below i defined a gentle new version that deal with different models through a switcher method
     def objective(self,l_inf=0,l_l1=0,l_l2=0,l_l0=0,l_l0_inf=0,l_log=0, pr1=0, pr2=0):
         """ This method instantiates th Objective function to minimize.

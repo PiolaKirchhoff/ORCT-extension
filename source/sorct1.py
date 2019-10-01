@@ -13,13 +13,13 @@ from itertools import compress
 import pyomo
 from pyomo.environ import *
 from pyomo.opt import SolverFactory
-from source.util import *
+from source.util1 import *
 from source.maths1 import *
 
 
-class SORCT:
+class SORCT1:
     """ The class manage Sparsity in Optimal Randomized Classification Trees (SORCT) of Blanquero et Al. 2018
-    and its extensions made by us. The depth of the tree can be 1 or 2.
+    and its extensions made by us. The depth of the tree is set to 1.
 
     Parameters:
         dataset (pandas.dataframe)  - New data
@@ -35,6 +35,10 @@ class SORCT:
             - The values that labels asummed are encoded by integers
         
         """
+        # B_in_NL & B_in_NR are defined in util1: dictionaries to deal with ancient nodes of leaf nodes
+        self.B_in_NL = B_in_NL 
+        self.B_in_NR = B_in_NR
+        
         # I_k is a method passed by the constructor to deal with pyomo syntax the objective function: given a class label the method returns the indeces of instances belonging to that class
         self.I_k = I_k
         # my_W is a dictionary, cost is a method defined in util1: it returns an dictionary of misclassification costs
@@ -45,14 +49,10 @@ class SORCT:
         # the input dataset must be a dataframe in pandas with all the column except for labels column
         self.my_x = my_train(dataset)
         
-        # list of classes in our dataset
-        self.classes = list(self.I_in_k.keys())
-        # B_in_NL & B_in_NR,B_in_NL1 & B_in_NR1  are defined in util: dictionaries to deal with ancient nodes of leaf nodes
-        self.B_in_NL = B_in_NL if len(self.classes)>=3 else B_in_NL1
-        self.B_in_NR = B_in_NR if len(self.classes)>=3 else B_in_NR1       
-        # BF_in_NL_L & BF_in_NL_R,BF_in_NL_L1 & BF_in_NL_R1 are defined in util: they are functions to manage ancient nodes of leaf nodes
-        self.BF_in_NL_R = BF_in_NL_R if len(self.classes)>=3 else BF_in_NL_R1
-        self.BF_in_NL_L = BF_in_NL_L if len(self.classes)>=3 else BF_in_NL_L1
+        
+        # BF_in_NL_L & BF_in_NL_R are defined in util1: they are functions to manage ancient nodes of leaf nodes
+        self.BF_in_NL_R = BF_in_NL_R
+        self.BF_in_NL_L = BF_in_NL_L
         # number of features
         self.number_f = len(dataset.columns)-1
         # indeces of features
@@ -204,7 +204,7 @@ class SORCT:
         print("Objective function with l0 regularization is loaded")
         return True
     
-    # Definition of objective function for L0 inf regularization approximation suggested in Rinaldi & Sciandrone
+    # Definition of objective function for L0 inf regularization approximation suggested in Mangasarian
     def l0_inf(self):
         """ This method instantiates the Objective function to minimize for L0 inf regularization approximation.
         
@@ -281,7 +281,7 @@ class SORCT:
             result (boolean) - objective function result
             
         """
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_inf = self.reg_term
             self.model.l_l1 = self.reg_term
         else:
@@ -304,7 +304,7 @@ class SORCT:
             
         """
         # Since i have two regularization term i check how long the length of reg_term 
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_l0_inf = self.reg_term
             self.model.l_l0 = self.reg_term
         else:
@@ -375,17 +375,8 @@ class SORCT:
             self.init_z = init[8]
         print("Init values defined.")
         return True
-    # This function is fundamental to set the value of alpha: alpha is the costant exponent in l0 regularization
+    
     def set_alpha(self,alp):
-        """This method set the costant exponent in l0 regularization
-        
-        Param:
-            alp (float)      - costant exponent
-        
-        Return:
-            result (boolean) - solve function result
-        
-        """
         self.model.alpha = alp
         return True
     

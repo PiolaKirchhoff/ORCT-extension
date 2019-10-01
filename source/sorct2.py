@@ -17,9 +17,9 @@ from source.util import *
 from source.maths1 import *
 
 
-class SORCT:
+class SORCT2:
     """ The class manage Sparsity in Optimal Randomized Classification Trees (SORCT) of Blanquero et Al. 2018
-    and its extensions made by us. The depth of the tree can be 1 or 2.
+    and its extensions made by us. The depth of the tree is set to 2.
 
     Parameters:
         dataset (pandas.dataframe)  - New data
@@ -35,29 +35,29 @@ class SORCT:
             - The values that labels asummed are encoded by integers
         
         """
+        # B_in_NL & B_in_NR are defined in util: dictionaries to deal with ancient nodes of leaf nodes
+        self.B_in_NL = B_in_NL 
+        self.B_in_NR = B_in_NR
+        
         # I_k is a method passed by the constructor to deal with pyomo syntax the objective function: given a class label the method returns the indeces of instances belonging to that class
         self.I_k = I_k
-        # my_W is a dictionary, cost is a method defined in util1: it returns an dictionary of misclassification costs
+        # my_W is a dictionary, cost is a method defined in util: it returns an dictionary of misclassification costs
         self.my_W = cost(dataset)
         # I_in_k is a dictionary passed by the constructor to deal with pyomo syntax the objective function: the key of dictionary is the class labels the values are the indeces of instances belonging to that class
         self.I_in_k = I_in_k
-        #my_train is a function defined in util1 to deal with training set that returns a dictionary: the key is a pair of index of instance and index of features and the value is the value of of the feature fot that instance
+        #my_train is a function defined in util to deal with training set that returns a dictionary: the key is a pair of index of instance and index of features and the value is the value of of the feature fot that instance
         # the input dataset must be a dataframe in pandas with all the column except for labels column
         self.my_x = my_train(dataset)
         
-        # list of classes in our dataset
-        self.classes = list(self.I_in_k.keys())
-        # B_in_NL & B_in_NR,B_in_NL1 & B_in_NR1  are defined in util: dictionaries to deal with ancient nodes of leaf nodes
-        self.B_in_NL = B_in_NL if len(self.classes)>=3 else B_in_NL1
-        self.B_in_NR = B_in_NR if len(self.classes)>=3 else B_in_NR1       
-        # BF_in_NL_L & BF_in_NL_R,BF_in_NL_L1 & BF_in_NL_R1 are defined in util: they are functions to manage ancient nodes of leaf nodes
-        self.BF_in_NL_R = BF_in_NL_R if len(self.classes)>=3 else BF_in_NL_R1
-        self.BF_in_NL_L = BF_in_NL_L if len(self.classes)>=3 else BF_in_NL_L1
+        
+        # BF_in_NL_L & BF_in_NL_R are defined in util: they are functions to manage ancient nodes of leaf nodes
+        self.BF_in_NL_R = BF_in_NL_R
+        self.BF_in_NL_L = BF_in_NL_L
         # number of features
         self.number_f = len(dataset.columns)-1
         # indeces of features
         self.index_features = list(range(0,self.number_f))
-        # indeces ofinstances
+        # indeces of instances
         self.index_instances = list(dataset.index)
         self.dataset = dataset
         
@@ -204,7 +204,7 @@ class SORCT:
         print("Objective function with l0 regularization is loaded")
         return True
     
-    # Definition of objective function for L0 inf regularization approximation suggested in Rinaldi & Sciandrone
+    # Definition of objective function for L0 inf regularization approximation suggested in Mangasarian
     def l0_inf(self):
         """ This method instantiates the Objective function to minimize for L0 inf regularization approximation.
         
@@ -281,7 +281,7 @@ class SORCT:
             result (boolean) - objective function result
             
         """
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_inf = self.reg_term
             self.model.l_l1 = self.reg_term
         else:
@@ -304,7 +304,7 @@ class SORCT:
             
         """
         # Since i have two regularization term i check how long the length of reg_term 
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_l0_inf = self.reg_term
             self.model.l_l0 = self.reg_term
         else:
@@ -571,7 +571,7 @@ class SORCT:
             return self.dataset.loc[:,n]
         else:
             return pd.DataFrame()
-        
+    
     # This method return a dictionary for a future feature expansion of the kernel
     def fs_for_kernel(self,threshold = 1e-4):
         """ This method return a dictionary in which the key is the number of the decision node and the value is a list of indeces of features that were selected during the training phase, given a threshold

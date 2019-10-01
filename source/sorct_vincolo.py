@@ -17,7 +17,7 @@ from source.util import *
 from source.maths1 import *
 
 
-class SORCT:
+class SORCT_v:
     """ The class manage Sparsity in Optimal Randomized Classification Trees (SORCT) of Blanquero et Al. 2018
     and its extensions made by us. The depth of the tree can be 1 or 2.
 
@@ -48,11 +48,11 @@ class SORCT:
         # list of classes in our dataset
         self.classes = list(self.I_in_k.keys())
         # B_in_NL & B_in_NR,B_in_NL1 & B_in_NR1  are defined in util: dictionaries to deal with ancient nodes of leaf nodes
-        self.B_in_NL = B_in_NL if len(self.classes)>=3 else B_in_NL1
-        self.B_in_NR = B_in_NR if len(self.classes)>=3 else B_in_NR1       
+        self.B_in_NL = B_in_NL if len(self.classes)==3 else B_in_NL1
+        self.B_in_NR = B_in_NR if len(self.classes)==3 else B_in_NR1       
         # BF_in_NL_L & BF_in_NL_R,BF_in_NL_L1 & BF_in_NL_R1 are defined in util: they are functions to manage ancient nodes of leaf nodes
-        self.BF_in_NL_R = BF_in_NL_R if len(self.classes)>=3 else BF_in_NL_R1
-        self.BF_in_NL_L = BF_in_NL_L if len(self.classes)>=3 else BF_in_NL_L1
+        self.BF_in_NL_R = BF_in_NL_R if len(self.classes)==3 else BF_in_NL_R1
+        self.BF_in_NL_L = BF_in_NL_L if len(self.classes)==3 else BF_in_NL_L1
         # number of features
         self.number_f = len(dataset.columns)-1
         # indeces of features
@@ -124,6 +124,14 @@ class SORCT:
             return  reduce(operator.mul,(1 / (1 + exp(-512*(   (sum(model.x[i,j]*model.a[j,t]for j in self.model.f_s)/len(self.model.f_s))-model.mu[t]  )))  for t in self.model.N_L_L[tl]),1)*reduce(operator.mul,(1-(1 / (1 + exp(-512*(   (sum(model.x[i,j]*model.a[j,tr]for j in self.model.f_s)/len(self.model.f_s))-model.mu[tr]  )))) for tr in self.model.N_L_R[tl]),1) == model.P[i,tl]
         self.model.Pr = Constraint(self.model.I,self.model.N_L, rule=Pr)
 
+        # We must add the following set of constraints for making a single class prediction at each leaf node:
+        def first_rule(model):
+            return model.C[0,3] == 1
+        self.model.first = Constraint(rule=first_rule)
+
+        def second_rule(model):
+            return model.C[1,2] == 1
+        self.model.second = Constraint(rule=second_rule)
         
         # We must add the following set of constraints for making a single class prediction at each leaf node:
         def class_in_leaf(model, tl):

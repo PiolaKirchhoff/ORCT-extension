@@ -2,7 +2,7 @@
 """
 Created on Sun Mar 17 21:26:26 2019
 
-@author: Antonio Consolo
+@author: antoc
 """
 import numpy as np
 import pandas as pd
@@ -17,18 +17,19 @@ from source.util import *
 from source.maths1 import *
 
 
-class SORCT:
+class SORCT_:
     """ The class manage Sparsity in Optimal Randomized Classification Trees (SORCT) of Blanquero et Al. 2018
-    and its extensions made by us. The depth of the tree can be 1 or 2.
+    and its extensions for the kernel expansion. The depth of the tree is set to 2.
 
     Parameters:
         dataset (pandas.dataframe)  - New data
+        test (pandas.dataframe)     - New test data
         I_in_k (dictionary)         - Key: Class integer ; Values: array of instances indexes of that class 
         I_k (method)                - Method to manage the dictionary defined above to deal with Pyomo sets    
-        init(array)                 - Initialization values
+        init(list)                 - Initialization values
     
     """
-    def __init__(self,dataset,I_in_k,I_k,init=[]):
+    def __init__(self,dataset,data_test,I_in_k,I_k,init=[],d = {}):
         """ The constructor initializes dictionaries and methods to deal with decision tress topologies.
             There is a preprocessing phase to deal with dataset.By default the dataset is assumed as follows:
             - The column of the labels must be named "Classes"
@@ -37,29 +38,32 @@ class SORCT:
         """
         # I_k is a method passed by the constructor to deal with pyomo syntax the objective function: given a class label the method returns the indeces of instances belonging to that class
         self.I_k = I_k
-        # my_W is a dictionary, cost is a method defined in util1: it returns an dictionary of misclassification costs
+        # my_W is a dictionary, cost is a method defined in util: it returns an dictionary of misclassification costs
         self.my_W = cost(dataset)
         # I_in_k is a dictionary passed by the constructor to deal with pyomo syntax the objective function: the key of dictionary is the class labels the values are the indeces of instances belonging to that class
         self.I_in_k = I_in_k
-        #my_train is a function defined in util1 to deal with training set that returns a dictionary: the key is a pair of index of instance and index of features and the value is the value of of the feature fot that instance
+        #my_train is a function defined in util to deal with training set that returns a dictionary: the key is a pair of index of instance and index of features and the value is the value of of the feature fot that instance
         # the input dataset must be a dataframe in pandas with all the column except for labels column
         self.my_x = my_train(dataset)
         
         # list of classes in our dataset
-        self.classes = list(self.I_in_k.keys())
+        self.classes = list(self.I_in_k.keys())        
         # B_in_NL & B_in_NR,B_in_NL1 & B_in_NR1  are defined in util: dictionaries to deal with ancient nodes of leaf nodes
         self.B_in_NL = B_in_NL if len(self.classes)>=3 else B_in_NL1
         self.B_in_NR = B_in_NR if len(self.classes)>=3 else B_in_NR1       
         # BF_in_NL_L & BF_in_NL_R,BF_in_NL_L1 & BF_in_NL_R1 are defined in util: they are functions to manage ancient nodes of leaf nodes
         self.BF_in_NL_R = BF_in_NL_R if len(self.classes)>=3 else BF_in_NL_R1
         self.BF_in_NL_L = BF_in_NL_L if len(self.classes)>=3 else BF_in_NL_L1
-        # number of features
+        #number of features
         self.number_f = len(dataset.columns)-1
         # indeces of features
         self.index_features = list(range(0,self.number_f))
-        # indeces ofinstances
+        # indeces of instances
         self.index_instances = list(dataset.index)
+        # dataset loaded into the class
         self.dataset = dataset
+        # test set loaded into the class
+        self.data_test = data_test
         
         # initilization values for variables of the model in case you don't use the proper method
         self.init_a = init[0] if len(init) > 0 else np.random.uniform(low=-1.0, high=1.0, size=None)
@@ -71,7 +75,8 @@ class SORCT:
         self.init_b = init[7] if len(init) > 5 else np.random.uniform(low=0.0, high=1.0, size=None)
         self.init_z = init[8] if len(init) > 5 else np.random.uniform(low=-1.0, high=1.0, size=None)
         
-
+        # dictionary passed by the constructor fro the mother class: fundamental for kernel expansion
+        self.d = d
         
     def createModel(self):
         """ This method builds the skeleton of the Decision Tree through Pyomo syntax
@@ -100,7 +105,7 @@ class SORCT:
         self.model.l_l0_inf = Param(initialize= 0,mutable=True)
         self.model.l_log = Param(initialize= 0,mutable=True)
         self.model.pr1 = Param(initialize= 0,mutable=True)
-        self.model.pr2 = Param(initialize= 0,mutable=True)
+        self.model.pr2 = Param(initialize= 0,mutable=True)        
         self.model.W = Param(self.model.K, self.model.K, within=NonNegativeReals, initialize=self.my_W)
         self.model.x = Param(self.model.I, self.model.f_s, within=PercentFraction, initialize=self.my_x)
         self.model.alpha = Param(initialize= 0,mutable=True)
@@ -116,7 +121,7 @@ class SORCT:
         self.model.P = Var(self.model.I,self.model.N_L,within = PercentFraction,initialize=self.init_P)
         # Variable to manage regularization L0
         self.model.z = Var(self.model.f_s, self.model.N_B, within=Reals, bounds = (-1.0,1.0),initialize=self.init_z)
-       
+        
         # Constraints definition
         
         # The following constraint let us define Pr variable (Probability for a instance of falling down on a given leaf node) as the product of probabilities along the tree
@@ -153,7 +158,6 @@ class SORCT:
             return model.a[f,tb] >= - model.z[f,tb]
         self.model.L0_ma = Constraint(self.model.f_s, self.model.N_B, rule=L0_par_ma)
         return True
-    
     # This method is an old version of methods to charge an objective function. Below i defined a gentle new version that deal with different models through a switcher method
     def objective(self,l_inf=0,l_l1=0,l_l2=0,l_l0=0,l_l0_inf=0,l_log=0, pr1=0, pr2=0):
         """ This method instantiates th Objective function to minimize.
@@ -167,6 +171,7 @@ class SORCT:
             l_log(float) - regularization therm for log approximation of L0 norm suggested in Rinaldi & Sciandrone
             pr1(float) - regularization therm for first attempt of approximation of L0 norm suggested in Rinaldi & Sciandrone
             pr2(float) - regularization therm for first attempt of approximation of L0 norm suggested in Rinaldi & Sciandrone
+        
         Return:
             result (boolean) - objective function result
             
@@ -184,12 +189,11 @@ class SORCT:
         self.model.cost = Objective(rule=cost_rule, sense=minimize)
         print("Objective function loaded")
         return True
-    
     # In order to deal with switcher method i need to define several methods: one for each model we would like to test
     
     # Definition of objective function for L0 regularization approximation suggested in Mangasarian
     def l0(self):
-        """ This method instantiates th Objective function to minimize for L0 regularization approximation.
+        """ This method instantiates th Objective function to minimize.
         
         Return:
             result (boolean) - objective function result
@@ -204,9 +208,9 @@ class SORCT:
         print("Objective function with l0 regularization is loaded")
         return True
     
-    # Definition of objective function for L0 inf regularization approximation suggested in Rinaldi & Sciandrone
+    # Definition of objective function for L0 inf regularization approximation suggested in Mangasarian
     def l0_inf(self):
-        """ This method instantiates the Objective function to minimize for L0 inf regularization approximation.
+        """ This method instantiates th Objective function to minimize.
         
         
         Return:
@@ -219,12 +223,12 @@ class SORCT:
         def cost_rule(model):
             return sum( sum( sum( model.P[i,t]* sum(model.W[k,j]*model.C[j,t] for j in self.model.K if k!=j)  for t in self.model.N_L) for i in self.model.I_k[k] ) for k in self.model.K )+self.model.l_l0_inf*sum((1-exp(-model.alpha*model.beta[j])) for j in self.model.f_s)
         self.model.cost = Objective(rule=cost_rule, sense=minimize)
-        print("Objective function with l0_inf regularization is loaded")
+        print("Objective function with l0_inf regularization isloaded")
         return True
     
     # Definition of objective function for L1 regularization
     def l1(self):
-        """ This method instantiates the Objective function to minimize for L1 regularization.
+        """ This method instantiates th Objective function to minimize.
         
         
         Return:
@@ -238,10 +242,9 @@ class SORCT:
         self.model.cost = Objective(rule=cost_rule, sense=minimize)
         print("Objective function with l1 regularization is loaded")
         return True
-    
     # Definition of objective function for L inf regularization
     def l_inf(self):
-        """ This method instantiates th Objective function to minimize for L inf regularization.
+        """ This method instantiates th Objective function to minimize.
         
         
         Return:
@@ -255,10 +258,9 @@ class SORCT:
         self.model.cost = Objective(rule=cost_rule, sense=minimize)
         print("Objective function with l_inf regularization is loaded")
         return True
-    
     # Definition of objective function for simple model
     def simple(self):
-        """ This method instantiates the Objective function to minimize for simple model.
+        """ This method instantiates th Objective function to minimize.
         
         
         Return:
@@ -281,7 +283,7 @@ class SORCT:
             result (boolean) - objective function result
             
         """
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_inf = self.reg_term
             self.model.l_l1 = self.reg_term
         else:
@@ -304,7 +306,7 @@ class SORCT:
             
         """
         # Since i have two regularization term i check how long the length of reg_term 
-        if len([self.reg_term])==1:
+        if len(self.reg_term)==1:
             self.model.l_l0_inf = self.reg_term
             self.model.l_l0 = self.reg_term
         else:
@@ -335,7 +337,7 @@ class SORCT:
             "l_inf": self.l_inf,
             "l0_inf": self.l0_inf,
             "both": self.both,
-            "both_l0": self.both_l0,
+            "both_l0": self.both_l0,            
             }
         # Get the function from switcher dictionary
         func = switcher.get(argument, lambda: "You type in something wrong!")
@@ -343,7 +345,7 @@ class SORCT:
         func()
         return True 
     
-    # function to get the init values
+    # function to get init values
     def init_values(self):
         """ This method get initialization values of the variables defined in the model
         
@@ -353,7 +355,7 @@ class SORCT:
         """
         return [self.init_a,self.init_mu,self.init_C,self.init_P,self.init_p]
     
-    # function to set the init values
+    # function to set init values
     def set_init(self,init):
         """ This method set initialization values of the variables defined in the model
         
@@ -375,6 +377,7 @@ class SORCT:
             self.init_z = init[8]
         print("Init values defined.")
         return True
+    
     # This function is fundamental to set the value of alpha: alpha is the costant exponent in l0 regularization
     def set_alpha(self,alp):
         """This method set the costant exponent in l0 regularization
@@ -397,7 +400,7 @@ class SORCT:
         
         """
         solver = SolverFactory('ipopt',executable='C:/Users/antoc/Desktop/Ipopt-3.11.1-win64-intel13.1/bin/ipopt.exe')
-        results = solver.solve(self.model) # ,tee=True show all the steps made by the solver
+        results = solver.solve(self.model) # ,tee=True
         return True
     
     def value_obj(self):
@@ -535,8 +538,8 @@ class SORCT:
             val = sum([1 if abs(self.var['a']['a['+str(inde)+','+str(b)+']']) > 0.0000001 else 0 for b in self.model.N_B])/3 
             return val
     
-    # This method gives as ouput a list of boolean of features which were involved in the model at least in one decision node of the tree, given a threshold of 10^-7      
-    def fs_selected(self,threshold = 1e-7):
+    # This method gives as ouput a list of boolean of features which were involved in the model at least in one decision node of the tree, given a threshold of 10^-7           
+    def fs_selected(self,threshold = 1e-4):
         """ This method return a list of booleans to know which feature was selected during the training phase  
         
         Param:
@@ -556,7 +559,7 @@ class SORCT:
         self.list_fs = lis
         return lis
     
-    # This method, after a calling to fs_selected() return a dataframe with only the features really useful for building the model,given the threshold chosen in fs_selected()
+    # This method, after a calling to fs_selected(), return a dataframe with only the features really useful for building the model, given the threshold chosen in fs_selected()
     def df_results(self):
         """ This method return a dataframe with only the features used by the model to build the tree  
         
@@ -593,4 +596,147 @@ class SORCT:
         self.dict_fs = matrix_presence
         
         return matrix_presence
+    
+    # This method is one of the step for building probability for kernel expansion. For each node it outputs a list with values for each feature. This values will be summed up and normalized in generate_prob() to get probabilities
+    def update_rule(self,list_fs,num_node):
+        """ This method return a dictionary in which the key is the number of the decision node and the value is a list of indeces of features that were selected during the training phase, given a threshold
+        
+        Param:
+            list_fs (array) - list of index of features
+            num_node (int)  - number of the decision node
+            
+        Return:
+            val       (array)  - list of values for features used in each node
+        
+        """
+        lunghezza = int(self.number_f)
+        # 1e-3 is and eps in order to manage empty scenarios: no features selected
+        val =  [1e-3] * int(self.number_f*(self.number_f+1)/2)
+        
+        for l in list_fs:
+            ix = 0
+            agg = lunghezza
+            for i in range (lunghezza):
+                if i < l:
+                    # self.var['a']['a['+str(l)+','+str(num_node)+']'] express the coefficient of feature of index 'l' in decision node 'num_node'
+                    val[int(ix+l-i)] += abs(self.var['a']['a['+str(l)+','+str(num_node)+']'])/(len(list_fs)**2)
+                    ix += agg
+                    agg -= 1
+                else:
+                    val[int(ix+i-l)]+=abs(self.var['a']['a['+str(l)+','+str(num_node)+']'])/(len(list_fs)**2)
+        return val
+    
+    # This method is one of the step for building probability for kernel expansion. It builds probability for the expansion of the kernel and return it
+    def generate_prob(self,threshold = 1e-4):
+        
+        # method defined above
+        self.fs_for_kernel(threshold)
+        
+        matrix_prob = []
+        for i in self.dict_fs:
+            matrix_prob.append(self.update_rule(self.dict_fs[i],i))
+            
+        result = np.sum(matrix_prob,axis=0)
+        res = result / sum(result)
+        
+        self.prob_couple = res
+        
+        return res
+    
+    # This method generate the new dataframe using probabilities generated by the method generate_prob()
+    def update_rule1(self,threshold = 1e-4):
+        
+        # number of fetures
+        n = self.number_f
+        
+        # features selected after a training phase: i decided to use all of them but it can be changed by command below 
+        final_l = [1 for j in self.model.f_s]
+        #self.fs_selected(threshold)
+        
+        #if we are at our first update step the dictionary that we will pass is empty so we are adding several list for the features in this way: first features of 4 is used? we add to the dictionary 0 : [1 0 0 0].  
+        if not self.d:
+            for j in range(n):
+                if final_l[j]== True:
+                    self.d[j] = [1 if i == j else 0 for i in range(n)]
+        
+        # we generate new couples            
+        my_prob = self.generate_prob(threshold)
+        couples = np.random.choice(range(0, int(self.number_f*(self.number_f+1)/2)), p=my_prob,size = n)
+        
+        # list of new couple of degree 2 expansion (length is N*(N+1)/2 )
+        list_couple = [0] * int(self.number_f*(self.number_f+1)/2)
+        
+        # put 1 to the ones chosen by random sampling
+        for j in couples:
+            list_couple[j]= 1
+        
+        
+        ####### DA COMMENTARE
+        w=[]
+        for i in range(n):
+            for j in range(n):
+                if i<=j:
+                    w = w + [[i,j]]
+        
+        for ix in range(len(list_couple)):
+            if list_couple[ix] == 1:
+                newcolumn = list(np.sum([ self.d[w[ix][0]],  self.d[w[ix][1]] ],axis=0))
+        
+        #check if it's good
+                check = True
+                for key in self.d:
+                    if self.d[key] == newcolumn:
+                        check = False
+        
+        #add to dictionary
+                if check == True:
+                    self.d[len(self.d)] = newcolumn
+                else:
+                    list_couple[ix] = 0
+        
+        # here there is concatenation of list of boolean of the old features with the list of booleans of expansion of degree 2            
+        new_fs = final_l+list_couple
+        # generation of the new dataset using method defined in util
+        new_df = extended2_df(self.dataset)
+        
+        # generation of the new dataset for testing using method defined in util
+        new_test = extended2_df(self.data_test)
+        names_column_test = list(new_test.columns)
+        h = list(compress(names_column_test, new_fs))
+        # storage of the new test set that the next model will use for testing
+        self.test_to_send = new_test.loc[:,h]
+        
+
+        # storage of the new index
+        self.indeces_exdf = new_fs
+        names_column = list(new_df.columns)
+        n = list(compress(names_column, new_fs))
+        
+        return new_df.loc[:,n]
    
+    # this method is useful to send to the mother class the expansed test set that after a new update step will be used by the next model
+    def test_generation(self):
+        """ This method returns the updated test set after the use of update_rule1() 
+        
+        
+        Return:
+            test_to_send (pandas.dataframe) - dataframe for testing expansed
+        
+        """
+        
+        return self.test_to_send
+    # this method let us to make prediction on the test set passed by the constructor
+    def predicted(self):
+        """ This method predictes label for the test set stored in this class passed through the costructor by the mother class
+        
+        Param:
+            X_test (pandas.dataframe) - test set of instances
+        
+        Return:
+            label (array) - labels of class
+        
+        """
+        label = []
+        for i in range(0,len(self.data_test)):
+            label.append(self.comp_label(list(self.data_test.iloc[i][:-1])))
+        return label
